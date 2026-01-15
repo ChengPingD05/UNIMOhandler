@@ -13,138 +13,191 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        :root { --accent: #2481cc; --bg: #000; --panel: #111; }
-        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
-        #map { height: 60vh; width: 100%; border-bottom: 2px solid var(--accent); }
-        .panel { height: 40vh; padding: 20px; background: var(--panel); box-sizing: border-box; display: flex; flex-direction: column; }
-        .info-box { flex-grow: 1; font-size: 14px; line-height: 1.6; }
-        .loc { color: var(--accent); font-weight: bold; }
-        .btn { width: 100%; padding: 18px; background: var(--accent); border: none; color: #fff; font-weight: bold; border-radius: 12px; font-size: 16px; cursor: pointer; }
+        :root { --accent: #2481cc; --bg: #000; --panel: #111; --text-dim: #aaa; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; overflow: hidden; }
+        
+        #map { height: 55vh; width: 100%; border-bottom: 2px solid var(--accent); }
+        
+        .panel { 
+            height: 45vh; 
+            padding: 20px; 
+            background: var(--panel); 
+            box-sizing: border-box; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px;
+        }
+
+        .route-info { font-size: 15px; line-height: 1.4; }
+        .loc-row { display: flex; align-items: flex-start; margin-bottom: 8px; }
+        .loc-icon { margin-right: 8px; min-width: 20px; }
+        .loc-text { font-weight: bold; color: #fff; }
+
+        /* 🟢 NEW: Grid Layout for Details */
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            background: #222;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .detail-item { color: var(--text-dim); }
+        .detail-val { color: #fff; font-weight: bold; display: block; margin-top: 2px; }
+        .notes-box { grid-column: span 2; border-top: 1px solid #333; padding-top: 5px; margin-top: 5px; }
+
+        .btn { 
+            margin-top: auto; 
+            width: 100%; 
+            padding: 16px; 
+            background: var(--accent); 
+            border: none; 
+            color: #fff; 
+            font-weight: 800; 
+            border-radius: 12px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            transition: background 0.2s;
+        }
         .btn:disabled { background: #333; color: #777; cursor: not-allowed; }
-        #error-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 9999; display: none; align-items: center; justify-content: center; text-align: center; padding: 20px; }
+        
+        #error-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 9999; display: none; align-items: center; justify-content: center; text-align: center; padding: 30px; }
     </style>
 </head>
 <body>
     <div id="error-overlay"><div>⚠️ <br><span id="error-msg"></span></div></div>
     
     <div id="map"></div>
+    
     <div class="panel">
-        <div class="info-box">
-            <div>🟢 FROM: <span id="p_name" class="loc">Loading...</span></div>
-            <div>🏁 TO: <span id="d_name" class="loc">Loading...</span></div>
-            <hr style="border: 0.5px dashed #444; margin: 10px 0;">
-            <div id="ride_details" style="color: #aaa;">Fetching secure order...</div>
+        <div class="route-info">
+            <div class="loc-row">
+                <span class="loc-icon">🟢</span>
+                <span id="p_name" class="loc-text">Loading...</span>
+            </div>
+            <div class="loc-row">
+                <span class="loc-icon">🏁</span>
+                <span id="d_name" class="loc-text">Loading...</span>
+            </div>
         </div>
-        <button class="btn" id="confirmBtn" onclick="sendHandshake()" disabled>💲 CONFIRM & QUOTE</button>
+
+        <div id="ride_details" class="details-grid">
+            <div style="text-align: center; padding: 20px; color: #666;">
+                🔒 Decrypting Order Data...
+            </div>
+        </div>
+
+        <button class="btn" id="confirmBtn" onclick="sendHandshake()" disabled>
+            ⌛ WAITING FOR DATA...
+        </button>
     </div>
 
     <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready(); tg.expand();
+        const tg = window.Telegram.WebApp;
+        tg.ready(); tg.expand();
 
-    // 🛑 CONFIGURATION
-    const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
-    const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // ⚠️ You had 'fsdfsd' in your file. Put the real key!
-    
-    // Your Ngrok URL
-    const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
+        // 🛑 REPLACE WITH REAL KEYS
+        const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
+        const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // <--- PASTE REAL KEY
+        const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
 
-    const supabase = window.supabase.createClient(SB_URL, SB_ANON_KEY);
-    let map;
+        const supabase = window.supabase.createClient(SB_URL, SB_ANON_KEY);
+        let map;
 
-    function die(msg) {
-        // 🟢 FIX: Use correct IDs for error display too
-        const pLabel = document.getElementById('p_name');
-        if(pLabel) pLabel.innerText = "Error";
-        
-        const dLabel = document.getElementById('d_name');
-        if(dLabel) dLabel.innerText = msg;
-        
-        document.getElementById('confirmBtn').innerText = "❌ SYSTEM OFFLINE";
-    }
+        function die(msg) {
+            document.getElementById('error-msg').innerText = msg;
+            document.getElementById('error-overlay').style.display = 'flex';
+        }
 
-    async function init() {
-        try {
-            // 1. Get Token
-            const startParam = tg.initDataUnsafe.start_param;
-            if (!startParam) return die("Open via Telegram Link.");
+        async function init() {
+            try {
+                // 1. Get Token
+                const startParam = tg.initDataUnsafe.start_param;
+                if (!startParam) return die("⛔ Access Denied: Please open this map from the Telegram Driver Feed.");
 
-            const token = startParam.replace('offer_', '');
-            console.log("Fetching token:", token);
+                const token = startParam.replace('offer_', '');
+                console.log("🔑 Decrypting Token:", token);
 
-            // 2. Call SQL Function
-            const { data, error } = await supabase
-                .rpc('get_public_ride_info', { token_input: token });
+                // 2. Fetch Secure Data
+                const { data, error } = await supabase.rpc('get_public_ride_info', { token_input: token });
 
-            if (error) throw new Error("Database Error: " + error.message);
-            if (!data || data.length === 0) throw new Error("Ride not found or Link Expired.");
+                if (error) throw new Error("Database Connection Failed. Check API Key.");
+                if (!data || data.length === 0) throw new Error("❌ Order Not Found. It may have been cancelled.");
 
-            const ride = data[0];
+                const ride = data[0];
 
-            // 🟢 FIX: ID Mismatch Solved here
-            // HTML ID is 'p_name', NOT 'p_label'
-            document.getElementById('p_name').innerText = ride.p_name;
-            document.getElementById('d_name').innerText = ride.d_name;
-            
-            // Populate Details
-            const detailsText = `Pax: ${ride.pax} | Luggage: ${ride.luggage}\nNotes: ${ride.notes || 'None'}`;
-            document.getElementById('ride_details').innerText = detailsText;
-            
-            // Enable Button
-            const btn = document.getElementById('confirmBtn');
-            btn.disabled = false;
-            btn.innerText = "💲 CONFIRM & SEND QUOTE";
+                // 3. Update Text (Pickup/Dropoff)
+                document.getElementById('p_name').innerText = ride.p_name;
+                document.getElementById('d_name').innerText = ride.d_name;
 
-            // 3. Draw Map
-            if (!map) {
-                map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                // 4. INJECT RICH HTML DETAILS (Pax, Luggage, Notes, Status)
+                const detailsHTML = `
+                    <div class="detail-item">👥 Passengers <span class="detail-val">${ride.pax} Pax</span></div>
+                    <div class="detail-item">🎒 Luggage <span class="detail-val">${ride.luggage}</span></div>
+                    <div class="detail-item notes-box">
+                        📝 Notes <span class="detail-val" style="color: #ffd700;">${ride.notes || 'No special requests'}</span>
+                    </div>
+                `;
+                document.getElementById('ride_details').innerHTML = detailsHTML;
 
-                L.Routing.control({
-                    waypoints: [
-                        L.latLng(ride.p_lat, ride.p_lng),
-                        L.latLng(ride.d_lat, ride.d_lng)
-                    ],
-                    lineOptions: { styles: [{ color: '#2481cc', weight: 5 }] },
-                    show: false, addWaypoints: false, draggableWaypoints: false,
-                    createMarker: () => null
-                }).addTo(map);
-                
-                L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', radius: 8 }).addTo(map);
-                L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', radius: 8 }).addTo(map);
+                // 5. Enable Button
+                const btn = document.getElementById('confirmBtn');
+                btn.disabled = false;
+                btn.innerText = `💲 CONFIRM (RM ... / ETA ...)`;
+                // Note: Price isn't in 'rides', it's inputted by driver later. 
+
+                // 6. Draw Map
+                if (!map) {
+                    map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+                    L.Routing.control({
+                        waypoints: [
+                            L.latLng(ride.p_lat, ride.p_lng),
+                            L.latLng(ride.d_lat, ride.d_lng)
+                        ],
+                        lineOptions: { styles: [{ color: '#2481cc', weight: 6, opacity: 0.8 }] },
+                        show: false, addWaypoints: false, draggableWaypoints: false,
+                        createMarker: () => null
+                    }).addTo(map);
+                    
+                    // Custom Markers
+                    L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', fillOpacity: 1, radius: 8 }).addTo(map).bindPopup("Pickup");
+                    L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', fillOpacity: 1, radius: 8 }).addTo(map).bindPopup("Dropoff");
+                }
+
+            } catch (e) {
+                console.error(e);
+                die(e.message);
             }
-
-        } catch (e) {
-            console.error(e);
-            die(e.message);
         }
-    }
 
-    async function sendHandshake() {
-        const btn = document.getElementById('confirmBtn');
-        btn.disabled = true;
-        btn.innerText = "⏳ CONNECTING...";
+        async function sendHandshake() {
+            const btn = document.getElementById('confirmBtn');
+            btn.disabled = true;
+            btn.innerText = "🚀 SENDING OFFER...";
 
-        const payload = tg.initDataUnsafe.start_param; 
+            const payload = tg.initDataUnsafe.start_param; 
 
-        try {
-            await fetch(`${NGROK_URL}/app-trigger`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    _auth: tg.initData, 
-                    ride_id: payload 
-                })
-            });
-            tg.close();
-        } catch (e) {
-            alert("Bot Connection Failed. Check Ngrok.");
-            btn.disabled = false;
-            btn.innerText = "💲 RETRY";
+            try {
+                await fetch(`${NGROK_URL}/app-trigger`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        _auth: tg.initData, 
+                        ride_id: payload 
+                    })
+                });
+                tg.close();
+            } catch (e) {
+                alert("❌ Connection to Bot Failed. Is the bot running?");
+                btn.disabled = false;
+                btn.innerText = "💲 RETRY";
+            }
         }
-    }
 
-    init();
-</script>
+        init();
+    </script>
 </body>
 </html>
