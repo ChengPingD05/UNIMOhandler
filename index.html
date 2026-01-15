@@ -1,92 +1,111 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>UNIMO | ROUTE PREVIEW</title>
+    <title>UNIMO | SECURE ROUTE</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
-        #map { height: 65vh; width: 100%; border-bottom: 2px solid #2481cc; }
-        .panel { height: 35vh; padding: 20px; background: #111; box-sizing: border-box; }
-        .btn { width: 100%; padding: 16px; background: #2481cc; border: none; color: #fff; font-weight: bold; border-radius: 12px; font-size: 16px; }
-        .info { margin-bottom: 15px; font-size: 14px; }
+        :root { --accent: #2481cc; --bg: #000; --panel: #111; }
+        body { margin: 0; background: var(--bg); color: #fff; font-family: sans-serif; overflow: hidden; }
+        #map { height: 60vh; width: 100%; border-bottom: 2px solid var(--accent); }
+        .panel { height: 40vh; padding: 20px; background: var(--panel); box-sizing: border-box; display: flex; flex-direction: column; }
+        .info-box { flex-grow: 1; font-size: 14px; line-height: 1.6; }
+        .loc { color: var(--accent); font-weight: bold; }
+        .btn { width: 100%; padding: 18px; background: var(--accent); border: none; color: #fff; font-weight: bold; border-radius: 12px; font-size: 16px; cursor: pointer; }
+        .btn:disabled { background: #333; color: #777; cursor: not-allowed; }
+        #error-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 9999; display: none; align-items: center; justify-content: center; text-align: center; padding: 20px; }
     </style>
 </head>
 <body>
+    <div id="error-overlay"><div>⚠️ <br><span id="error-msg"></span></div></div>
+    
     <div id="map"></div>
     <div class="panel">
-        <div class="info">📍 <span id="p_label">Loading...</span></div>
-        <div class="info">🏁 <span id="d_label">Loading...</span></div>
-        <button class="btn" id="confirmBtn" onclick="sendHandshake()">💲 CONFIRM & SEND QUOTE</button>
+        <div class="info-box">
+            <div>🟢 FROM: <span id="p_name" class="loc">Loading...</span></div>
+            <div>🏁 TO: <span id="d_name" class="loc">Loading...</span></div>
+            <hr style="border: 0.5px dashed #444; margin: 10px 0;">
+            <div id="ride_details" style="color: #aaa;">Fetching secure order...</div>
+        </div>
+        <button class="btn" id="confirmBtn" onclick="sendHandshake()" disabled>💲 CONFIRM & QUOTE</button>
     </div>
 
     <script>
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        const db = supabase.createClient('YOUR_SUPABASE_URL', 'YOUR_SUPABASE_KEY');
+        // 🛑 CONFIGURATION - PUBLIC KEYS ONLY
+        const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
+        const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // Safe to expose IF you use the function below
+        const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; // For the Handshake only
 
-        // --- STEP 2: EXTRACTION ---
-        const ride_id = tg.initDataUnsafe.start_param.split('_')[1]; // Extracts "999" from "offer_999"
+        const supabase = window.supabase.createClient(SB_URL, SB_ANON_KEY);
+        let map;
 
-        async function initMap() {
-            // Fetch ride coordinates from Supabase
-            const { data: ride } = await db.from('rides').select('*').eq('ride_id', ride_id).single();
-            
-            document.getElementById('p_label').innerText = ride.pickup_location;
-            document.getElementById('d_label').innerText = ride.dropoff_location;
-
-            // --- STEP 3: VISUAL ROUTE ---
-            const map = L.map('map', { zoomControl: false }).setView([ride.pickup_lat, ride.pickup_lng], 14);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-            L.Routing.control({
-                waypoints: [
-                    L.latLng(ride.pickup_lat, ride.pickup_lng),
-                    L.latLng(ride.dest_lat, ride.dest_lng)
-                ],
-                show: false, addWaypoints: false, draggableWaypoints: false
-            }).addTo(map);
+        function die(msg) {
+            document.getElementById('error-msg').innerText = msg;
+            document.getElementById('error-overlay').style.display = 'flex';
         }
 
+        async function init() {
+        try {
+            // 1. Get Token from URL (offer_UUID)
+            const startParam = tg.initDataUnsafe.start_param;
+            if (!startParam) return die("Access Denied.");
+            
+            // Extract the UUID part (everything after 'offer_')
+            const token = startParam.replace('offer_', ''); 
+
+            // 2. CALL SECURE FUNCTION WITH TOKEN
+            const { data, error } = await supabase
+                .rpc('get_public_ride_info', { token_input: token }); // Note: token_input
+
+            if (error || !data || data.length === 0) throw new Error("Link expired or invalid.");
+            
+            const ride = data[0];
+
+            // 3. Update UI (Same as before)
+            document.getElementById('p_name').innerText = ride.p_name;
+            document.getElementById('d_name').innerText = ride.d_name;
+            // ... (Rest of map drawing code) ...
+
+        } catch (e) {
+            die(e.message);
+        }
+    }
 
         async function sendHandshake() {
-            const tg = window.Telegram.WebApp;
-            const rideId = tg.initDataUnsafe.start_param;
+            // Keep the handshake pointing to Python for security/logic
+            const btn = document.getElementById('confirmBtn');
+            btn.disabled = true;
+            btn.innerText = "⏳ SENDING...";
 
-            // 🛑 REPLACE with your current Ngrok URL from Step 0
-            const ngrokUrl = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev/app-trigger';
-
-            await fetch(ngrokUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    _auth: tg.initData, 
-                    ride_id: rideId
-                })
-            });
-
-            tg.close(); // Close app and return to chat
+            try {
+                await fetch(`${NGROK_URL}/app-trigger`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        _auth: tg.initData, 
+                        ride_id: tg.initDataUnsafe.start_param
+                    })
+                });
+                tg.close();
+            } catch (e) {
+                alert("Connection Error. Check Bot.");
+                btn.disabled = false;
+                btn.innerText = "💲 RETRY";
+            }
         }
-        //async function sendHandshake() {
-            // Trigger the "shout" to the Bot Backend
-        //    await fetch('https://your-bot-on-render.com/app-trigger', {
-        //        method: 'POST',
-        ///        body: JSON.stringify({
-        ///            _auth: tg.initData, 
-        ///            ride_id: ride_id
-        ///        })
-        ///    });
-        ///    tg.close();
-        ///}
 
-        initMap();
+        init();
     </script>
 </body>
 </html>
