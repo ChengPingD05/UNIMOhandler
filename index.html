@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>UNIMO | ROUTE PREVIEW</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        body { margin: 0; background: #000; color: #fff; font-family: sans-serif; overflow: hidden; }
+        #map { height: 65vh; width: 100%; border-bottom: 2px solid #2481cc; }
+        .panel { height: 35vh; padding: 20px; background: #111; box-sizing: border-box; }
+        .btn { width: 100%; padding: 16px; background: #2481cc; border: none; color: #fff; font-weight: bold; border-radius: 12px; font-size: 16px; }
+        .info { margin-bottom: 15px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="panel">
+        <div class="info">📍 <span id="p_label">Loading...</span></div>
+        <div class="info">🏁 <span id="d_label">Loading...</span></div>
+        <button class="btn" id="confirmBtn" onclick="sendHandshake()">💲 CONFIRM & SEND QUOTE</button>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready(); tg.expand();
+
+        const db = supabase.createClient('YOUR_SUPABASE_URL', 'YOUR_SUPABASE_KEY');
+
+        // --- STEP 2: EXTRACTION ---
+        const ride_id = tg.initDataUnsafe.start_param.split('_')[1]; // Extracts "999" from "offer_999"
+
+        async function initMap() {
+            // Fetch ride coordinates from Supabase
+            const { data: ride } = await db.from('rides').select('*').eq('ride_id', ride_id).single();
+            
+            document.getElementById('p_label').innerText = ride.pickup_location;
+            document.getElementById('d_label').innerText = ride.dropoff_location;
+
+            // --- STEP 3: VISUAL ROUTE ---
+            const map = L.map('map', { zoomControl: false }).setView([ride.pickup_lat, ride.pickup_lng], 14);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+            L.Routing.control({
+                waypoints: [
+                    L.latLng(ride.pickup_lat, ride.pickup_lng),
+                    L.latLng(ride.dest_lat, ride.dest_lng)
+                ],
+                show: false, addWaypoints: false, draggableWaypoints: false
+            }).addTo(map);
+        }
+
+
+        async function sendHandshake() {
+            const rideId = window.Telegram.WebApp.initDataUnsafe.start_param;
+            const initData = window.Telegram.WebApp.initData;
+
+            // REPLACE this with your actual Ngrok URL
+            const ngrokUrl = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev';
+
+            await fetch(ngrokUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    _auth: initData, 
+                    ride_id: rideId
+                })
+            });
+
+            window.Telegram.WebApp.close();
+        }
+        //async function sendHandshake() {
+            // Trigger the "shout" to the Bot Backend
+        //    await fetch('https://your-bot-on-render.com/app-trigger', {
+        //        method: 'POST',
+        ///        body: JSON.stringify({
+        ///            _auth: tg.initData, 
+        ///            ride_id: ride_id
+        ///        })
+        ///    });
+        ///    tg.close();
+        ///}
+
+        initMap();
+    </script>
+</body>
+</html>
