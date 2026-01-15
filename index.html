@@ -57,22 +57,22 @@
 
 
         async function sendHandshake() {
-            const rideId = window.Telegram.WebApp.initDataUnsafe.start_param;
-            const initData = window.Telegram.WebApp.initData;
+            const tg = window.Telegram.WebApp;
+            const rideId = tg.initDataUnsafe.start_param;
 
-            // REPLACE this with your actual Ngrok URL
-            const ngrokUrl = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev';
+            // 🛑 REPLACE with your current Ngrok URL from Step 0
+            const ngrokUrl = ' https://gloomiest-preinstructional-cinderella.ngrok-free.dev';
 
             await fetch(ngrokUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    _auth: initData, 
+                    _auth: tg.initData, 
                     ride_id: rideId
                 })
             });
 
-            window.Telegram.WebApp.close();
+            tg.close(); // Close app and return to chat
         }
         //async function sendHandshake() {
             // Trigger the "shout" to the Bot Backend
