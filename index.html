@@ -43,59 +43,59 @@
     tg.ready(); tg.expand();
 
     // 🛑 CONFIGURATION
-    // 1. Enter your Supabase URL & Anon Key (It is safe to expose Anon Key if RLS is on)
     const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
-    const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v';
+    const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // ⚠️ You had 'fsdfsd' in your file. Put the real key!
     
-    // 2. Enter your Ngrok URL (No trailing slash)
+    // Your Ngrok URL
     const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
 
     const supabase = window.supabase.createClient(SB_URL, SB_ANON_KEY);
     let map;
 
     function die(msg) {
-        document.getElementById('p_label').innerText = "Error";
-        document.getElementById('d_label').innerText = msg;
+        // 🟢 FIX: Use correct IDs for error display too
+        const pLabel = document.getElementById('p_name');
+        if(pLabel) pLabel.innerText = "Error";
+        
+        const dLabel = document.getElementById('d_name');
+        if(dLabel) dLabel.innerText = msg;
+        
         document.getElementById('confirmBtn').innerText = "❌ SYSTEM OFFLINE";
     }
 
     async function init() {
         try {
-            // 1. Get the Token (e.g. "offer_a0eebc...")
+            // 1. Get Token
             const startParam = tg.initDataUnsafe.start_param;
             if (!startParam) return die("Open via Telegram Link.");
 
-            // Extract UUID: removes "offer_" prefix
             const token = startParam.replace('offer_', '');
-            
-            console.log("Fetching data for token:", token); // 🛠️ Debugging
+            console.log("Fetching token:", token);
 
-            // 2. CALL THE SECURE SQL FUNCTION (RPC)
-            // We pass the token to the function we created in Supabase
+            // 2. Call SQL Function
             const { data, error } = await supabase
                 .rpc('get_public_ride_info', { token_input: token });
 
-            if (error) {
-                console.error("Supabase RPC Error:", error);
-                throw new Error("Database Access Failed");
-            }
+            if (error) throw new Error("Database Error: " + error.message);
+            if (!data || data.length === 0) throw new Error("Ride not found or Link Expired.");
 
-            if (!data || data.length === 0) {
-                throw new Error("Ride not found or Link Expired.");
-            }
+            const ride = data[0];
 
-            const ride = data[0]; // RPC returns an array
-
-            // 3. Update UI
-            document.getElementById('p_label').innerText = ride.p_name;
-            document.getElementById('d_label').innerText = ride.d_name;
+            // 🟢 FIX: ID Mismatch Solved here
+            // HTML ID is 'p_name', NOT 'p_label'
+            document.getElementById('p_name').innerText = ride.p_name;
+            document.getElementById('d_name').innerText = ride.d_name;
+            
+            // Populate Details
+            const detailsText = `Pax: ${ride.pax} | Luggage: ${ride.luggage}\nNotes: ${ride.notes || 'None'}`;
+            document.getElementById('ride_details').innerText = detailsText;
             
             // Enable Button
             const btn = document.getElementById('confirmBtn');
             btn.disabled = false;
             btn.innerText = "💲 CONFIRM & SEND QUOTE";
 
-            // 4. Draw Map
+            // 3. Draw Map
             if (!map) {
                 map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -110,12 +110,12 @@
                     createMarker: () => null
                 }).addTo(map);
                 
-                // Add Markers
                 L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', radius: 8 }).addTo(map);
                 L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', radius: 8 }).addTo(map);
             }
 
         } catch (e) {
+            console.error(e);
             die(e.message);
         }
     }
@@ -125,10 +125,9 @@
         btn.disabled = true;
         btn.innerText = "⏳ CONNECTING...";
 
-        const payload = tg.initDataUnsafe.start_param; // "offer_UUID"
+        const payload = tg.initDataUnsafe.start_param; 
 
         try {
-            // Send the UUID token to your Python Bot
             await fetch(`${NGROK_URL}/app-trigger`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -147,3 +146,5 @@
 
     init();
 </script>
+</body>
+</html>
