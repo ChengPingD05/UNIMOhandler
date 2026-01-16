@@ -208,15 +208,15 @@
 
                 // 4. THE EXIT (Direct back to Bot)
                 setTimeout(() => {
-                    // Method A: Telegram Native Close (Best)
-                    tg.close(); 
+                    // 👇 REPLACE THIS WITH YOUR EXACT BOT USERNAME
+                    const botLink = "https://t.me/chengtechtest_bot"; 
                     
-                    // Method B: Browser Fallback (If testing in Chrome)
-                    // If tg.close() doesn't work (browser), we change text
-                    btn.innerText = "✅ DONE. CLOSE THIS WINDOW.";
-                    btn.disabled = false;
-                    btn.onclick = () => window.close();
-                }, 1000); // 1-second pause for effect
+                    // This creates a seamless transition: Map -> Bot Chat
+                    tg.openTelegramLink(botLink);
+                    
+                    // Close the map *after* triggering the switch
+                    tg.close();
+                }, 1000);
 
             } catch (e) {
                 // Error State
