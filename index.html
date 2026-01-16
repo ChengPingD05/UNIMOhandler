@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>UNIMO BRIDGE</title>
+    <title>UNIMO | SECURE ROUTE</title>
     
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -13,130 +13,170 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
     <style>
-        body { margin: 0; background: #000; color: #fff; font-family: monospace; overflow: hidden; }
+        :root { --accent: #2481cc; --bg: #000; --panel: #111; --text-dim: #aaa; }
         
-        /* 🔴 DEBUG BOX: Shows you EXACTLY what data exists */
-        #debug-console {
-            position: fixed; top: 0; left: 0; width: 100%; height: 30vh;
-            background: rgba(50, 0, 0, 0.9); color: #0f0; padding: 10px;
-            font-size: 12px; overflow-y: scroll; z-index: 9999;
-            border-bottom: 2px solid red; display: block;
+        /* 🟢 LAYOUT FIX: Use Flexbox to force Map Top / Panel Bottom */
+        body { 
+            margin: 0; background: var(--bg); color: #fff; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; flex-direction: column; height: 100vh; overflow: hidden; 
+        }
+        
+        /* Map takes all available empty space */
+        #map { flex-grow: 1; width: 100%; border-bottom: 2px solid var(--accent); z-index: 1; }
+        
+        /* Panel takes only what it needs at the bottom */
+        .panel { 
+            background: var(--panel); 
+            padding: 20px; 
+            display: flex; flex-direction: column; gap: 12px;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5); 
+            z-index: 10;
+            min-height: 40%; /* Ensure space for details */
         }
 
-        #map { height: 70vh; width: 100%; position: absolute; bottom: 0; }
-        
-        .floating-btn {
-            position: fixed; bottom: 20px; left: 5%; width: 90%;
-            padding: 15px; background: #2481cc; color: white; border: none;
-            font-size: 16px; font-weight: bold; border-radius: 12px; z-index: 1000;
+        .route-info { display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+        .loc-row { display: flex; align-items: center; }
+        .loc-icon { margin-right: 10px; width: 20px; text-align: center; }
+        .loc-text { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .details-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            background: #222; padding: 12px; border-radius: 8px; font-size: 13px;
         }
+        .detail-item { color: var(--text-dim); }
+        .detail-val { color: #fff; font-weight: bold; display: block; margin-top: 3px; }
+        
+        .btn { 
+            margin-top: auto; width: 100%; padding: 16px; 
+            background: var(--accent); border: none; color: #fff; 
+            font-weight: 800; border-radius: 12px; font-size: 16px; cursor: pointer; 
+        }
+        .btn:disabled { background: #333; color: #777; cursor: not-allowed; }
     </style>
 </head>
 <body>
-    <div id="debug-console">Initializing Bridge...<br></div>
     
     <div id="map"></div>
-    <button id="confirmBtn" class="floating-btn" onclick="sendHandshake()" disabled>WAITING...</button>
+    
+    <div class="panel">
+        <div class="route-info">
+            <div class="loc-row">
+                <span class="loc-icon">🟢</span>
+                <span id="p_name" class="loc-text">Loading...</span>
+            </div>
+            <div class="loc-row">
+                <span class="loc-icon">🏁</span>
+                <span id="d_name" class="loc-text">Loading...</span>
+            </div>
+        </div>
+
+        <div id="ride_details" class="details-grid">
+            <div style="grid-column: span 2; text-align: center; color: #666;">
+                🔒 Secure Connection...
+            </div>
+        </div>
+
+        <button class="btn" id="confirmBtn" onclick="sendHandshake()" disabled>
+            ⌛ LOADING...
+        </button>
+    </div>
 
     <script>
-        // 1. LOGGER FUNCTION
-        function log(msg) {
-            const box = document.getElementById('debug-console');
-            box.innerHTML += `> ${msg}<br>`;
-            console.log(msg);
-        }
-
         const tg = window.Telegram.WebApp;
         tg.ready(); tg.expand();
 
-        // 🛑 PASTE KEYS HERE
+        // 🛑 CONFIGURATION - PASTE REAL KEYS HERE
         const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
-        const SB_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // <--- PASTE REAL KEY
-        const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev';
+        const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; 
+        const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
+
+        // Global Error Handler
+        window.onerror = function(msg) { alert("⚠️ APP CRASH: " + msg); };
 
         async function init() {
             try {
-                log("🚀 Starting App...");
-
-                // 2. THE CRITICAL BRIDGE: Read Telegram Data
-                // Telegram holds the data in 'initDataUnsafe', NOT in the URL.
-                const telegramData = tg.initDataUnsafe;
-                
-                log(`📱 Telegram Param: ${telegramData.start_param || "NONE"}`);
-                
+                // 1. HYBRID TOKEN DETECTION (Works in App & Browser)
                 let token = null;
-
-                // SCENARIO A: Inside Telegram
-                if (telegramData.start_param) {
-                    log("✅ Found Telegram Data!");
-                    // Remove "offer_" prefix to get pure UUID
-                    token = telegramData.start_param.replace('offer_', '');
-                } 
-                // SCENARIO B: Browser Testing (Fallback)
-                else {
-                    const urlParams = new URLSearchParams(window.location.search);
+                const urlParams = new URLSearchParams(window.location.search);
+                
+                if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+                    token = tg.initDataUnsafe.start_param.replace('offer_', '');
+                } else if (urlParams.get('token')) {
                     token = urlParams.get('token');
-                    log(`🌍 Browser URL Param: ${token || "NONE"}`);
                 }
 
-                if (!token) {
-                    log("❌ FATAL: No Token found in Telegram OR Browser.");
-                    throw new Error("EMPTY_DATA");
-                }
+                if (!token) throw new Error("NO TOKEN FOUND. Use ?token=UUID or Open from Channel.");
 
-                log(`🔑 Decoded Token: ${token}`);
-                
-                // 3. DATABASE FETCH
-                if (SB_KEY.includes('YOUR_ACTUAL')) throw new Error("⚠️ KEY NOT SET!");
-                const db = supabase.createClient(SB_URL, SB_KEY);
-                
-                log("📡 Querying Database...");
+                // 2. CONNECT
+                if (SB_ANON_KEY.includes('YOUR_ACTUAL')) throw new Error("KEY MISSING in HTML file.");
+                const db = window.supabase.createClient(SB_URL, SB_ANON_KEY);
+
+                // 3. FETCH
                 const { data, error } = await db.rpc('get_public_ride_info', { token_input: token });
-
-                if (error) throw new Error(error.message);
-                if (!data || data.length === 0) throw new Error("Ride ID invalid/expired");
+                if (error) throw new Error("DB Error: " + error.message);
+                if (!data || data.length === 0) throw new Error("Ride Not Found (Cancelled/Expired).");
 
                 const ride = data[0];
-                log(`✅ DATA RECEIVED: ${ride.p_name} -> ${ride.d_name}`);
 
-                // 4. ACTIVATE UI
-                document.getElementById('confirmBtn').innerText = `✅ CONFIRM: ${ride.p_name}`;
-                document.getElementById('confirmBtn').disabled = false;
-                document.getElementById('debug-console').style.display = 'none'; // Hide debug if success
+                // 4. UPDATE UI
+                document.getElementById('p_name').innerText = ride.p_name;
+                document.getElementById('d_name').innerText = ride.d_name;
 
-                // 5. MAP
-                const map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 13);
+                document.getElementById('ride_details').innerHTML = `
+                    <div class="detail-item">👥 Pax <span class="detail-val">${ride.pax}</span></div>
+                    <div class="detail-item">🎒 Luggage <span class="detail-val">${ride.luggage}</span></div>
+                    <div class="detail-item" style="grid-column: span 2; margin-top:5px; border-top:1px solid #333; padding-top:5px;">
+                        📝 Note <span class="detail-val" style="color: #ffd700;">${ride.notes || 'None'}</span>
+                    </div>
+                `;
+
+                const btn = document.getElementById('confirmBtn');
+                btn.disabled = false;
+                btn.innerText = "💲 CONFIRM & QUOTE";
+
+                // 5. DRAW MAP
+                const map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-                
+
                 L.Routing.control({
                     waypoints: [L.latLng(ride.p_lat, ride.p_lng), L.latLng(ride.d_lat, ride.d_lng)],
                     lineOptions: { styles: [{ color: '#2481cc', weight: 6 }] },
-                    show: false, createMarker: () => null
+                    show: false, addWaypoints: false, draggableWaypoints: false, createMarker: () => null
                 }).addTo(map);
 
+                L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', radius: 8 }).addTo(map);
+                L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', radius: 8 }).addTo(map);
+
             } catch (e) {
-                log(`🛑 CRASH: ${e.message}`);
-                alert("SYSTEM ERROR: " + e.message);
+                alert(e.message);
+                document.getElementById('confirmBtn').innerText = "❌ ERROR";
             }
         }
 
         async function sendHandshake() {
+            const btn = document.getElementById('confirmBtn');
+            btn.innerText = "🚀 SENDING...";
+            btn.disabled = true;
+
+            // Re-fetch token safely
+            let rawParam = tg.initDataUnsafe.start_param;
+            if (!rawParam) {
+                const t = new URLSearchParams(window.location.search).get('token');
+                if(t) rawParam = "offer_" + t;
+            }
+
             try {
-                // We send the RAW param from Telegram (e.g., "offer_UUID") back to Python
-                // Python expects "offer_" to be there!
-                const rawParam = tg.initDataUnsafe.start_param || ("offer_" + new URLSearchParams(window.location.search).get('token'));
-                
                 await fetch(`${NGROK_URL}/app-trigger`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        _auth: tg.initData, 
-                        ride_id: rawParam 
-                    })
+                    body: JSON.stringify({ _auth: tg.initData, ride_id: rawParam })
                 });
                 tg.close();
             } catch (e) {
-                alert("Bot Connect Error: " + e.message);
+                alert("Bot Connection Failed: " + e.message);
+                btn.disabled = false;
+                btn.innerText = "RETRY";
             }
         }
 
