@@ -99,7 +99,7 @@
 
         // 🛑 REPLACE WITH REAL KEYS
         const SB_URL = 'https://zvoywylatpccjpwvrrhz.supabase.co'; 
-        const SB_ANON_KEY = 'sb_publishable_QSg1kcg2DHNzbH3unaQ1nQ_91zVE_Pa'; // <--- PASTE REAL KEY
+        const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; // <--- PASTE REAL KEY
         const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
 
         const supabase = window.supabase.createClient(SB_URL, SB_ANON_KEY);
@@ -111,67 +111,55 @@
         }
 
         async function init() {
-            try {
-                // 1. Get Token
-                const startParam = tg.initDataUnsafe.start_param;
-                if (!startParam) return die("⛔ Access Denied: Please open this map from the Telegram Driver Feed.");
-
-                const token = startParam.replace('offer_', '');
-                console.log("🔑 Decrypting Token:", token);
-
-                // 2. Fetch Secure Data
-                const { data, error } = await supabase.rpc('get_public_ride_info', { token_input: token });
-
-                if (error) throw new Error("Database Connection Failed. Check API Key.");
-                if (!data || data.length === 0) throw new Error("❌ Order Not Found. It may have been cancelled.");
-
-                const ride = data[0];
-
-                // 3. Update Text (Pickup/Dropoff)
-                document.getElementById('p_name').innerText = ride.p_name;
-                document.getElementById('d_name').innerText = ride.d_name;
-
-                // 4. INJECT RICH HTML DETAILS (Pax, Luggage, Notes, Status)
-                const detailsHTML = `
-                    <div class="detail-item">👥 Passengers <span class="detail-val">${ride.pax} Pax</span></div>
-                    <div class="detail-item">🎒 Luggage <span class="detail-val">${ride.luggage}</span></div>
-                    <div class="detail-item notes-box">
-                        📝 Notes <span class="detail-val" style="color: #ffd700;">${ride.notes || 'No special requests'}</span>
-                    </div>
-                `;
-                document.getElementById('ride_details').innerHTML = detailsHTML;
-
-                // 5. Enable Button
-                const btn = document.getElementById('confirmBtn');
-                btn.disabled = false;
-                btn.innerText = `💲 CONFIRM (RM ... / ETA ...)`;
-                // Note: Price isn't in 'rides', it's inputted by driver later. 
-
-                // 6. Draw Map
-                if (!map) {
-                    map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-                    L.Routing.control({
-                        waypoints: [
-                            L.latLng(ride.p_lat, ride.p_lng),
-                            L.latLng(ride.d_lat, ride.d_lng)
-                        ],
-                        lineOptions: { styles: [{ color: '#2481cc', weight: 6, opacity: 0.8 }] },
-                        show: false, addWaypoints: false, draggableWaypoints: false,
-                        createMarker: () => null
-                    }).addTo(map);
-                    
-                    // Custom Markers
-                    L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', fillOpacity: 1, radius: 8 }).addTo(map).bindPopup("Pickup");
-                    L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', fillOpacity: 1, radius: 8 }).addTo(map).bindPopup("Dropoff");
-                }
-
-            } catch (e) {
-                // 🛑 DEBUGGING: Show the exact error on the screen
-                alert("SYSTEM ERROR:\n" + e.message); 
-                die(e.message);
+        try {
+            // 1. GET TOKEN (The Hybrid Logic)
+            let token = null;
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Priority A: Browser Testing (?token=...)
+            if (urlParams.get('token')) {
+                token = urlParams.get('token');
+                console.log("🔗 Mode: Browser/Direct URL");
+            } 
+            // Priority B: Telegram App (startapp=offer_...)
+            else if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
+                // Must strip the "offer_" prefix sent by Python
+                token = tg.initDataUnsafe.start_param.replace('offer_', '');
+                console.log("📱 Mode: Telegram App");
             }
+
+            if (!token) throw new Error("NO DATA FOUND. \nIf testing in browser, add ?token=UUID to the URL.");
+
+            // 2. CONNECT TO DB (Paste your Real Key!)
+            if (SB_ANON_KEY.includes('YOUR_ACTUAL')) throw new Error("⚠️ PASTE YOUR API KEY IN HTML FILE");
+            const db = supabase.createClient(SB_URL, SB_ANON_KEY);
+
+            // 3. FETCH RIDE
+            // We use the flexible text function we created earlier
+            const { data, error } = await db.rpc('get_public_ride_info', { token_input: token });
+
+            if (error) throw new Error("Database Error: " + error.message);
+            if (!data || data.length === 0) throw new Error("Ride not found or Expired.");
+
+            const ride = data[0];
+
+            // 4. UPDATE UI
+            document.getElementById('p_name').innerText = ride.p_name;
+            document.getElementById('d_name').innerText = ride.d_name;
+            // ... (rest of your UI logic)
+            
+            // Enable Confirm Button
+            document.getElementById('confirmBtn').disabled = false;
+            document.getElementById('confirmBtn').innerText = "💲 CONFIRM & QUOTE";
+
+            // ... (Map drawing logic)
+
+        } catch (e) {
+            // LOUD ERROR REPORTING
+            alert("❌ ERROR: " + e.message);
+            document.getElementById('p_name').innerText = "Error";
+            document.getElementById('d_name').innerText = "Failed to load";
+        }
         }
 
         
