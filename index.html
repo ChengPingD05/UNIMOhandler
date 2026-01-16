@@ -176,9 +176,12 @@
 
         async function sendHandshake() {
             const btn = document.getElementById('confirmBtn');
-            btn.innerText = "🚀 SENDING...";
+            
+            // 1. Lock UI
             btn.disabled = true;
+            btn.innerText = "🚀 SENDING...";
 
+            // Get payload safely
             let rawParam = tg.initDataUnsafe.start_param;
             if (!rawParam) {
                 const t = new URLSearchParams(window.location.search).get('token');
@@ -186,16 +189,41 @@
             }
 
             try {
-                await fetch(`${NGROK_URL}/app-trigger`, {
+                // 2. The Network Call
+                const response = await fetch(`${NGROK_URL}/app-trigger`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ _auth: tg.initData, ride_id: rawParam })
+                    body: JSON.stringify({ 
+                        _auth: tg.initData, 
+                        ride_id: rawParam 
+                    })
                 });
-                tg.close();
+
+                if (!response.ok) throw new Error("Server rejected request");
+
+                // 3. ✅ VISUAL CONFIRMATION (The Polish)
+                btn.style.backgroundColor = "#4dff4d"; // Green
+                btn.style.color = "#000";
+                btn.innerText = "✅ OFFER SENT!";
+
+                // 4. THE EXIT (Direct back to Bot)
+                setTimeout(() => {
+                    // Method A: Telegram Native Close (Best)
+                    tg.close(); 
+                    
+                    // Method B: Browser Fallback (If testing in Chrome)
+                    // If tg.close() doesn't work (browser), we change text
+                    btn.innerText = "✅ DONE. CLOSE THIS WINDOW.";
+                    btn.disabled = false;
+                    btn.onclick = () => window.close();
+                }, 1000); // 1-second pause for effect
+
             } catch (e) {
-                alert("Connection Failed: " + e.message);
+                // Error State
+                btn.style.backgroundColor = "#ff4d4d"; // Red
+                btn.innerText = "❌ FAILED. RETRY?";
                 btn.disabled = false;
-                btn.innerText = "RETRY";
+                alert("Connection Error: " + e.message);
             }
         }
 
