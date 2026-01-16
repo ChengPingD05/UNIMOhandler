@@ -130,15 +130,14 @@
                 const map = L.map('map', { zoomControl: false });
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-                // 5. ROUTING MAGIC (Clean & Centered)
+                // 5. ROUTING MAGIC (Reverted to Standard Zoom)
                 const routingControl = L.Routing.control({
                     waypoints: [L.latLng(ride.p_lat, ride.p_lng), L.latLng(ride.d_lat, ride.d_lng)],
                     lineOptions: { styles: [{ color: '#2481cc', weight: 6, opacity: 0.9 }] },
-                    show: false, // 🛑 Hides the text instructions
-                    addWaypoints: false, // 🛑 Hides draggable dots
+                    show: false, // 🛑 Keep this! It hides the text list.
+                    addWaypoints: false, 
                     draggableWaypoints: false,
-                    fitSelectedRoutes: false, // 🛑 We will fit manually with padding
-                    createMarker: () => null // We draw custom markers below
+                    createMarker: () => null 
                 }).addTo(map);
 
                 // 6. EVENT: WHEN ROUTE IS FOUND
@@ -146,39 +145,18 @@
                     const routes = e.routes;
                     const summary = routes[0].summary;
                     
-                    // A. Calculate Distance & Time
+                    // A. Update Stats
                     const distanceKm = (summary.totalDistance / 1000).toFixed(1);
-                    const timeMins = Math.round(summary.totalTime / 60);
-
-                    // B. Update Details Grid with REAL Route Data
                     document.getElementById('ride_details').innerHTML = `
-                        <div class="detail-item">
-                            <span class="detail-label">Distance</span>
-                            <span class="detail-val" style="color: #2481cc;">${distanceKm} km</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Pax</span>
-                            <span class="detail-val">${ride.pax}</span>
-                        </div>
-                        <div class="detail-item">
-                            <span class="detail-label">Luggage</span>
-                            <span class="detail-val">${ride.luggage}</span>
-                        </div>
-                        <div class="detail-item note-row">
-                            <span class="note-text">📝 "${ride.notes || 'No special notes'}"</span>
-                        </div>
+                        <div class="detail-item"><span class="detail-label">Dist</span><span class="detail-val" style="color:#2481cc">${distanceKm} km</span></div>
+                        <div class="detail-item"><span class="detail-label">Pax</span><span class="detail-val">${ride.pax}</span></div>
+                        <div class="detail-item"><span class="detail-label">Luggage</span><span class="detail-val">${ride.luggage}</span></div>
+                        <div class="detail-item note-row"><span class="note-text">📝 "${ride.notes || 'No notes'}"</span></div>
                     `;
 
-                    // C. SMART CENTERING (The Fix for "Hiding the View")
-                    // We get the height of the bottom panel to calculate padding
-                    const panelHeight = document.getElementById('bottomPanel').offsetHeight;
-                    
-                    // We tell the map: "Fit the route, but add 20px padding top/sides, 
-                    // and 'panelHeight + 20' padding at the bottom."
-                    map.fitBounds(L.latLngBounds(routes[0].coordinates), {
-                        paddingTopLeft: [20, 20],
-                        paddingBottomRight: [20, panelHeight + 20] 
-                    });
+                    // B. SIMPLE CENTERING (No aggressive padding)
+                    // This just fits the blue line perfectly on screen.
+                    map.fitBounds(L.latLngBounds(routes[0].coordinates));
                 });
 
                 // Custom Markers
