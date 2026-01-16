@@ -15,51 +15,60 @@
     <style>
         :root { --accent: #2481cc; --bg: #000; --panel: #111; --text-dim: #aaa; }
         
-        /* 🟢 LAYOUT FIX: Use Flexbox to force Map Top / Panel Bottom */
+        /* Layout: Map fills screen, Panel floats at bottom */
         body { 
             margin: 0; background: var(--bg); color: #fff; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
             display: flex; flex-direction: column; height: 100vh; overflow: hidden; 
         }
         
-        /* Map takes all available empty space */
-        #map { flex-grow: 1; width: 100%; border-bottom: 2px solid var(--accent); z-index: 1; }
+        #map { flex-grow: 1; width: 100%; z-index: 1; }
         
-        /* Panel takes only what it needs at the bottom */
+        /* The Bottom Panel */
         .panel { 
             background: var(--panel); 
-            padding: 20px; 
+            padding: 20px 20px 30px 20px; /* Extra padding at bottom for iPhone Home bar */
             display: flex; flex-direction: column; gap: 12px;
-            box-shadow: 0 -5px 20px rgba(0,0,0,0.5); 
-            z-index: 10;
-            min-height: 40%; /* Ensure space for details */
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.8); 
+            z-index: 999;
+            border-top: 1px solid #333;
+            min-height: 40vh; /* Fixed height for consistent map padding */
         }
 
-        .route-info { display: flex; flex-direction: column; gap: 8px; font-size: 15px; }
+        .route-info { display: flex; flex-direction: column; gap: 10px; font-size: 15px; }
         .loc-row { display: flex; align-items: center; }
-        .loc-icon { margin-right: 10px; width: 20px; text-align: center; }
+        .loc-icon { margin-right: 12px; width: 20px; text-align: center; font-size: 18px; }
         .loc-text { font-weight: 600; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+        /* Grid for details */
         .details-grid {
-            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-            background: #222; padding: 12px; border-radius: 8px; font-size: 13px;
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; /* 3 Columns now */
+            background: #222; padding: 12px; border-radius: 10px; font-size: 13px; margin-top: 5px;
         }
-        .detail-item { color: var(--text-dim); }
-        .detail-val { color: #fff; font-weight: bold; display: block; margin-top: 3px; }
+        .detail-item { display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .detail-label { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .detail-val { color: #fff; font-weight: 800; font-size: 14px; margin-top: 4px; }
         
+        .note-row { grid-column: span 3; border-top: 1px solid #333; margin-top: 5px; padding-top: 8px; text-align: left; }
+        .note-text { font-style: italic; color: #ffd700; font-weight: normal; }
+
         .btn { 
-            margin-top: auto; width: 100%; padding: 16px; 
+            margin-top: auto; width: 100%; padding: 18px; 
             background: var(--accent); border: none; color: #fff; 
             font-weight: 800; border-radius: 12px; font-size: 16px; cursor: pointer; 
+            box-shadow: 0 4px 15px rgba(36, 129, 204, 0.4);
         }
-        .btn:disabled { background: #333; color: #777; cursor: not-allowed; }
+        .btn:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
+        
+        /* Hide Leaflet's ugly instructions box */
+        .leaflet-routing-container { display: none !important; }
     </style>
 </head>
 <body>
     
     <div id="map"></div>
     
-    <div class="panel">
+    <div class="panel" id="bottomPanel">
         <div class="route-info">
             <div class="loc-row">
                 <span class="loc-icon">🟢</span>
@@ -72,8 +81,8 @@
         </div>
 
         <div id="ride_details" class="details-grid">
-            <div style="grid-column: span 2; text-align: center; color: #666;">
-                🔒 Secure Connection...
+            <div style="grid-column: span 3; text-align: center; color: #666; padding: 10px;">
+                📡 Calculating Route...
             </div>
         </div>
 
@@ -91,62 +100,95 @@
         const SB_ANON_KEY = 'sb_publishable_aRnVwfxmtkKa1mrt35osew_KFRqZ_2v'; 
         const NGROK_URL = 'https://gloomiest-preinstructional-cinderella.ngrok-free.dev'; 
 
-        // Global Error Handler
         window.onerror = function(msg) { alert("⚠️ APP CRASH: " + msg); };
 
         async function init() {
             try {
-                // 1. HYBRID TOKEN DETECTION (Works in App & Browser)
+                // 1. TOKEN HANDLING
                 let token = null;
                 const urlParams = new URLSearchParams(window.location.search);
-                
                 if (tg.initDataUnsafe && tg.initDataUnsafe.start_param) {
                     token = tg.initDataUnsafe.start_param.replace('offer_', '');
                 } else if (urlParams.get('token')) {
                     token = urlParams.get('token');
                 }
+                if (!token) throw new Error("NO TOKEN. Use ?token=UUID or Open from Channel.");
 
-                if (!token) throw new Error("NO TOKEN FOUND. Use ?token=UUID or Open from Channel.");
-
-                // 2. CONNECT
-                if (SB_ANON_KEY.includes('YOUR_ACTUAL')) throw new Error("KEY MISSING in HTML file.");
+                // 2. CONNECT & FETCH
+                if (SB_ANON_KEY.includes('YOUR_ACTUAL')) throw new Error("⚠️ KEY MISSING IN HTML");
                 const db = window.supabase.createClient(SB_URL, SB_ANON_KEY);
 
-                // 3. FETCH
                 const { data, error } = await db.rpc('get_public_ride_info', { token_input: token });
-                if (error) throw new Error("DB Error: " + error.message);
-                if (!data || data.length === 0) throw new Error("Ride Not Found (Cancelled/Expired).");
-
+                if (error || !data || data.length === 0) throw new Error("Ride Not Found.");
                 const ride = data[0];
 
-                // 4. UPDATE UI
+                // 3. UI UPDATE (Initial)
                 document.getElementById('p_name').innerText = ride.p_name;
                 document.getElementById('d_name').innerText = ride.d_name;
 
-                document.getElementById('ride_details').innerHTML = `
-                    <div class="detail-item">👥 Pax <span class="detail-val">${ride.pax}</span></div>
-                    <div class="detail-item">🎒 Luggage <span class="detail-val">${ride.luggage}</span></div>
-                    <div class="detail-item" style="grid-column: span 2; margin-top:5px; border-top:1px solid #333; padding-top:5px;">
-                        📝 Note <span class="detail-val" style="color: #ffd700;">${ride.notes || 'None'}</span>
-                    </div>
-                `;
+                // 4. MAP SETUP
+                const map = L.map('map', { zoomControl: false });
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+                // 5. ROUTING MAGIC (Clean & Centered)
+                const routingControl = L.Routing.control({
+                    waypoints: [L.latLng(ride.p_lat, ride.p_lng), L.latLng(ride.d_lat, ride.d_lng)],
+                    lineOptions: { styles: [{ color: '#2481cc', weight: 6, opacity: 0.9 }] },
+                    show: false, // 🛑 Hides the text instructions
+                    addWaypoints: false, // 🛑 Hides draggable dots
+                    draggableWaypoints: false,
+                    fitSelectedRoutes: false, // 🛑 We will fit manually with padding
+                    createMarker: () => null // We draw custom markers below
+                }).addTo(map);
+
+                // 6. EVENT: WHEN ROUTE IS FOUND
+                routingControl.on('routesfound', function(e) {
+                    const routes = e.routes;
+                    const summary = routes[0].summary;
+                    
+                    // A. Calculate Distance & Time
+                    const distanceKm = (summary.totalDistance / 1000).toFixed(1);
+                    const timeMins = Math.round(summary.totalTime / 60);
+
+                    // B. Update Details Grid with REAL Route Data
+                    document.getElementById('ride_details').innerHTML = `
+                        <div class="detail-item">
+                            <span class="detail-label">Distance</span>
+                            <span class="detail-val" style="color: #2481cc;">${distanceKm} km</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Pax</span>
+                            <span class="detail-val">${ride.pax}</span>
+                        </div>
+                        <div class="detail-item">
+                            <span class="detail-label">Luggage</span>
+                            <span class="detail-val">${ride.luggage}</span>
+                        </div>
+                        <div class="detail-item note-row">
+                            <span class="note-text">📝 "${ride.notes || 'No special notes'}"</span>
+                        </div>
+                    `;
+
+                    // C. SMART CENTERING (The Fix for "Hiding the View")
+                    // We get the height of the bottom panel to calculate padding
+                    const panelHeight = document.getElementById('bottomPanel').offsetHeight;
+                    
+                    // We tell the map: "Fit the route, but add 20px padding top/sides, 
+                    // and 'panelHeight + 20' padding at the bottom."
+                    map.fitBounds(L.latLngBounds(routes[0].coordinates), {
+                        paddingTopLeft: [20, 20],
+                        paddingBottomRight: [20, panelHeight + 20] 
+                    });
+                });
+
+                // Custom Markers
+                L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', radius: 8, fillOpacity: 1 }).addTo(map).bindPopup("Pickup");
+                L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', radius: 8, fillOpacity: 1 }).addTo(map).bindPopup("Dropoff");
+
+                // Enable Button
                 const btn = document.getElementById('confirmBtn');
                 btn.disabled = false;
                 btn.innerText = "💲 CONFIRM & QUOTE";
-
-                // 5. DRAW MAP
-                const map = L.map('map', { zoomControl: false }).setView([ride.p_lat, ride.p_lng], 15);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-                L.Routing.control({
-                    waypoints: [L.latLng(ride.p_lat, ride.p_lng), L.latLng(ride.d_lat, ride.d_lng)],
-                    lineOptions: { styles: [{ color: '#2481cc', weight: 6 }] },
-                    show: false, addWaypoints: false, draggableWaypoints: false, createMarker: () => null
-                }).addTo(map);
-
-                L.circleMarker([ride.p_lat, ride.p_lng], { color: '#4dff4d', radius: 8 }).addTo(map);
-                L.circleMarker([ride.d_lat, ride.d_lng], { color: '#ff4d4d', radius: 8 }).addTo(map);
 
             } catch (e) {
                 alert(e.message);
@@ -159,7 +201,6 @@
             btn.innerText = "🚀 SENDING...";
             btn.disabled = true;
 
-            // Re-fetch token safely
             let rawParam = tg.initDataUnsafe.start_param;
             if (!rawParam) {
                 const t = new URLSearchParams(window.location.search).get('token');
@@ -174,7 +215,7 @@
                 });
                 tg.close();
             } catch (e) {
-                alert("Bot Connection Failed: " + e.message);
+                alert("Connection Failed: " + e.message);
                 btn.disabled = false;
                 btn.innerText = "RETRY";
             }
