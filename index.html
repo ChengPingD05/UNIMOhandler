@@ -168,11 +168,13 @@
                 }
 
             } catch (e) {
-                console.error(e);
+                // 🛑 DEBUGGING: Show the exact error on the screen
+                alert("SYSTEM ERROR:\n" + e.message); 
                 die(e.message);
             }
         }
 
+        
         async function sendHandshake() {
             const btn = document.getElementById('confirmBtn');
             btn.disabled = true;
@@ -199,5 +201,6 @@
 
         init();
     </script>
+    
 </body>
 </html>
